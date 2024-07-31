@@ -1,0 +1,336 @@
+---
+title: "MGEM Mixed Pixel Lab"
+author:
+  - name: Ramon Melser
+    email: melser@student.ubc.ca
+format:
+  html:
+    code-links:
+      - text: GitHub Repo
+        icon: file-code
+        href: https://github.com/ramonmelser/MGEM_Loon_Lake
+    other-links:
+      - text: Landsat Program
+        href: https://landsat.gsfc.nasa.gov/
+      - text: Sentinel-2 Program
+        href: https://www.esa.int/Applications/Observing_the_Earth/Copernicus/Sentinel-2
+      - text: Planet Program
+        href: https://www.planet.com/
+      - text: SatelliteXplorer
+        href: https://geoxc-apps.bd.esri.com/space/satellite-explorer/
+    
+theme: flatly
+editor: visual
+toc: true
+toc-location: left
+number-sections: false
+number-depth: 1
+---
+
+![](images/g10.png)
+
+```{r setup, include=FALSE}
+
+library(leaflet)
+library(raster)
+library(terra)
+library(htmlwidgets)
+library(htmltools)
+library(leafem)
+library(DT)
+library(kableExtra)
+library(leaflet.extras)
+library(leaflet.extras2)
+
+```
+
+# Introduction
+
+Welcome to the Malcolm Knapp Research Forest! During your time in the MGEM program, you will be exposed to a wide range of remote sensing and GIS technologies, data sets and workflows that equip you to answer questions about our environment. As you will learn/have learned in GEM 520, remote sensing data sets can typically be characterized by three core elements: temporal resolution, spatial resolution, and spectral resolution. To review:
+
+**Temporal resolution** refers to the revisit time of a sensor, aka how long it takes to complete full coverage of the earth for satellite based sensors. How quickly a satellite completes full coverage of the earth is determined the its' orbit - the higher the satellite, the slower the orbit. There are 3 key types of earth orbits: low earth orbits, medium earth orbits, and high/geosynchronous orbits. **Low Earth Orbit** satellites are commonly 160-2,000 km above the earth, and complete a full orbit between 90 minutes to 2 hours. In a 24-hour period, low orbit satellites tend to cover the the earth twice, providing daytime and nighttime observations. As a result, low earth orbits are ideal for scientific and weather programs that require high temporal resolutions. The altitude of **Medium Earth Orbit** satellites typically falls between 2,000 to 35,000 km. Most famously, the satellites of the Global Positioning System (GPS) are in a medium earth orbit called the 'semi-synchronous' orbit (26,560 km), which takes 12 hours to complete. Finally, **High Earth Orbits** are characterized by an altitude exceeding 35,780 km above the earth. At this altitude, the orbit of the satellite matches the rotation of the Earth. Since this results in a relatively consistent observation swath on the earth's surface, these orbits are commonly referred to as 'geosynchronous' orbits. If you are curious about the orbits of certain satellites, I highly encourage you to spend some time on [SatelliteXplorer](https://geoxc-apps.bd.esri.com/space/satellite-explorer/), where you can visualize the orbit of specific missions, and track satellites' live locations!
+
+The **spatial resolution** of a sensor refers to the dimensions of a pixel captured by that sensor (the higher the resolution, the smaller the pixel). Depending on instrument design and orbit, satellite-based remote sensing platforms may provide data with resolutions ranging from coarse (i.e. 250m - 1km MODIS Pixels) to fine scales (i.e. 3m Planetscope). As a general rule of thumb, high spatial resolutions typically come at the cost of temporal resolutions. For example, the instruments aboard MODIS capture 36 bands at spatial resolutions ranging from 250m to 1km, with a global revisit time of 1-2 days. Landsat-8 on the other hand, delivers observations of 8 bands at 30m (as well as 1 band at 15m and 2 bands at 100m). The global revisit time of Landsat a Landsat satellite is 16 days. Since these satellites operate in a constellation, we are able to obtain full global coverage every 8 days.
+
+Finally, the **spectral resolution** refers to unique portions of the electromagnetic spectrum captured by a sensor, quantifying both the number and width of spectral bands. You may recall that multispectral imagery typically refers to sensors capturing 3-10 bands, whilst hyperspectral sensors can capture hundreds of bands. Using these bands, we can extract valuable information about land cover, moisture, vegetation vigor, etc. In this lab, we will use the Red, Green, and Blue bands to visualize 'True Colour' images of the MKRF research forest. In addition, we will use the Normalized Difference Vegetation Index (NDVI), which uses the Red and Near-Infrared bands to quantify vegetation 'greenness'. In brief, healthy vegetation absorbs most of the visible light (Red band) and reflects most of the Near-Infrared bands, with the inverse true for unhealthy or sparse vegetation.
+
+[![](images/11_638136987476493711.jpg){fig-align="center"}](https://www.gophotonics.com/community/what-is-an-electromagnetic-spectrum-or-em-spectrum)
+
+# Mixed Pixel Problem
+
+Regardless of the spatial resolution of a chosen remote sensing data product, it is always important to remember that each pixel represents an aggregated spectral response based on all land cover within the pixel. For example, a 30m Landsat pixel may capture the spectral signature of multiple landscape features like a river, building and forest edge. This phenomenon is commonly referred to as the 'mixed pixel problem', and is an important consideration in remote sensing applications.
+
+[![](images/Fig6_16.jpg)](https://ltb.itc.utwente.nl/498/concept/81667)
+
+Landscape-level analysis of satellite data often requires that pixels be classified using comprehensive categories or descriptors. In the example shown above, we may wish to classify water (blue), buildings (red), grass (green), and sand (yellow). In this exercise, you will simulate the spatial resolutions of three popular satellite remote sensing platforms: PlanetScope, Sentinel-2, and Landsat. (Some basic information for these satellites is summarized in the table below, with additional information available via the links provided under the table of contents.) By mapping out “pixels” on the landscape at MKRF, you will investigate the effect of the mixed pixel problem on your ability to classify the landscape into meaningful categories. The main goals for the day are a) to experience what the spatial resolution of some global satellite data sets look like on the ground, and b) to understand the limitations of representing complex land cover through the classification of satellite data pixels.
+
+```{r platform table, echo=FALSE}
+
+table <- read.csv("D:/Sync/MGEM_Loon_Lake/Platforms.csv")
+
+DT::datatable(table,
+              rownames = FALSE,
+              class = 'cell-border stripe',
+              colnames = c("Platform", "Date of Acquisition",
+                           "Spatial Resolution", "Revisit Time",
+                           "Bands", "Number of Satellites",
+                           "Operating Since", "Free?"))
+
+
+```
+
+# Pixel Mapping
+
+The first part of this exercise involves mapping out your own 'pixels' in the MKRF research forest, and observing the landscape features that each of these pixels contain. For this exercise, you need to form into 6 groups, which will be provided with a compass and transect tape. You will also need to assign 1 note-taker to mark down your observations in the field. To guide you in this exercise, we have laid out 6 points that will serve as your 'field sites' - these sites are marked on the interactive map below. Before heading out, take a few minutes to explore the map and its' layers. You will notice that you can 'slide' between true colour and NDVI visualizations: you will use this functionality later in the exercise, but don't need to focus on this when you're in the field.
+
+```{r files, echo=FALSE, include=FALSE}
+
+Planet <- rast("D:/Sync/MGEM_Loon_Lake/Planet_RGB.tif")
+Sentinel <- rast("D:/Sync/MGEM_Loon_Lake/Sentinel_2_RGB.tif")
+Landsat <- rast("D:/Sync/MGEM_Loon_Lake/Landsat_8_RGB.tif")
+
+Plots <- vect("D:/Sync/MGEM_Loon_Lake/plots/MGEM_plots.shp")
+Plots <- terra::project(Plots, "+init=EPSG:4326")
+
+MKRF <- vect("D:/Sync/MGEM_Loon_Lake/Vector/mkrf_boundary.shp")
+MKRF <- project(MKRF, crs(Planet))
+
+##crop to MKRF
+Planet <- crop(Planet, MKRF, mask = TRUE)
+Sentinel <- crop(Sentinel, MKRF, mask = TRUE)
+Landsat <- crop(Landsat, MKRF, mask = TRUE)
+
+##Convert to brick for leaflet usage
+Planet <- brick(Planet)
+Sentinel <- brick(Sentinel)
+Landsat <- brick(Landsat)
+
+```
+
+```{r NDVI, echo=FALSE}
+# Normalized Difference Vegetation Index (NDVI) Function
+ndvi_func <- function(image, nir, red){
+  ndvi <- (image[[nir]] - image[[red]]) / (image[[nir]] + image[[red]])
+  return(ndvi)
+}
+
+# NDVI Creation
+#(Note: the band numbers here are based on 4-band composites that only include RGB and NIR)
+Planet_NDVI <- ndvi_func(Planet, 4, 3)
+Landsat_NDVI <- ndvi_func(Landsat, 4, 3)
+Sentinel_NDVI <- ndvi_func(Sentinel, 4, 3)
+
+sentinel_pal <- colorNumeric(c("#FF0000", "#FFFF00", "#006400"),
+                             values(Sentinel_NDVI),
+                             na.color = "transparent")
+
+landsat_pal <- colorNumeric(c("#FF0000", "#FFFF00", "#006400"),
+                            values(Landsat_NDVI),
+                            na.color = "transparent")
+
+planet_pal <- colorNumeric(c("#FF0000", "#FFFF00", "#006400"),
+                           values(Planet_NDVI),
+                           na.color = "transparent")
+
+
+```
+
+```{r leaflet, echo=FALSE, include=FALSE}
+
+b <- leaflet(Plots, width = 600, height = 600) %>%
+  
+  #set up the two map panes
+  addMapPane("right", zIndex = 0) %>%
+  addMapPane("left",  zIndex = 0) %>%
+  addTiles(group = "base", layerId = "baseid1", options = pathOptions(pane = "right")) %>%
+  addTiles(group = "base", layerId = "baseid2", options = pathOptions(pane = "left")) %>%
+  
+  ##add plot points and enable labels
+  addMarkers(group = "Plots", label = ~htmlEscape(Name))%>%
+  
+  ##add Landsat RGB and NDVI
+  addRasterRGB(x = Landsat, 3,2,1,
+               quantiles = c(0.02, 0.98), domain = NULL,
+               options = leafletOptions(pane = "left"), group = "Landsat") %>%
+  
+  addRasterImage(x = Landsat_NDVI, colors = landsat_pal,
+                 options = leafletOptions(pane = "right"), group = "Landsat") %>%
+  
+  ##add Sentinel RGB and NDVI
+  addRasterRGB(x = Sentinel, 3,2,1,,
+               quantiles = c(0.02, 0.98), domain = NULL,
+               options = leafletOptions(pane = "left"), group = "Sentinel") %>%
+  
+  addRasterImage(x = Sentinel_NDVI, colors = sentinel_pal,
+                 options = leafletOptions(pane = "right"), group = "Sentinel") %>%
+  
+  ##add Planet RGB and NDVI
+  #large files may require you to play with the maxBytes option
+    addRasterRGB(x = Planet, 3,2,1,,
+              quantiles = c(0.02, 0.98), domain = NULL,
+               options = leafletOptions(pane = "left"), group = "Planet",
+               maxBytes = 11269792) %>%
+  
+  addRasterImage(x = Planet_NDVI, colors = planet_pal,
+                 options = leafletOptions(pane = "right"), group = "Planet",
+                 maxBytes = 11269792) %>%
+  
+  ##Set layer controls and enable side by side panel split
+  addLayersControl(baseGroups = c("Landsat", "Sentinel", "Planet"),
+                   overlayGroups = c("Plots")) %>%
+  
+  addSidebyside(layerId = "sidecontrols",
+                rightId = "baseid1",
+                leftId  = "baseid2") %>%
+  
+  ##Add scale bar and enable GPS live location
+  addScaleBar(position = c("bottomleft")) %>%
+  addControlGPS(options = gpsOptions(position = "topleft", activate = TRUE,
+                                     autoCenter = TRUE, maxZoom = 10,
+                                     setView = TRUE))
+
+
+```
+
+```{r map, echo=FALSE}
+b
+```
+
+When you are ready:
+
+1.  Locate your first study site on the interactive map in Part 2. In the field, these sites will be marked with a cone. You can also enable your live GPS location on the map in case you are not sure if you are in the right place.
+2.  Map out a 3-meter PlanetScope pixel around the cone, using a compass and the transect tape provided. Orient your imaginary grid towards true north. Mark the corners of the pixel with your group members. (HINT: the magnetic declination at Loon Lake is +16°). You will have to adjust your compass accordingly. If you are using a compass app on your phone, make sure that true north is enabled.)
+3.  Repeat step 3 for a 10-meter Sentinel 2 pixel and a 30-meter Landsat pixel.
+4.  Decide if the pixel is mixed or homogeneous and note down your response.
+5.  As a group, discuss and record the features visible on the landscape.
+6.  Based on the recorded features, come up with a land cover class to assign to for each platform, in each pixel. This step is somewhat subjective; you can disagree with your group members!
+
+![](images/plots.png){width="400"}
+
+#### Discussion Questions
+
+1.  Were there any sites dominated by one particular land cover class across all three resolutions? Discuss with your group in context of the mixed pixel problem.
+2.  Imagine each pixel in the year 2000. Look for clues about the site’s history. Do you think that you would have assigned it to a different land cover class 20 years ago?
+
+Once you are done filling out the table by the end of the lab, click the 'pdf' button to export your table. <br/>
+
+```{r table, echo=FALSE}
+
+
+table <- read.csv("D:/Sync/MGEM_Loon_Lake/Loon_Lake_Table.csv")
+
+DT::datatable(table,
+              rownames = FALSE,
+              class = 'cell-border stripe',
+              colnames = c("Platform", "Site#", "Mixed or Homogenous",
+                           "Landscape Features", "Landcover Class",
+                           "Pixel Characteristics","Estimated NDVI"),
+              extensions = 'Buttons',
+              options = list(dom = 'Bfrtip',buttons = c('pdf'), pageLength = 23),
+              editable = TRUE) %>%
+  
+  formatStyle('Plot..',
+              target = 'row',
+              backgroundColor = styleEqual(c(1,2,3,4,5,6),
+                                           c("gray", "white", "gray", "white",
+                                             "gray", "white")))
+
+```
+
+# Imagery Comparison
+
+Now that you have taken some detailed field notes for each of the sites, we will return to the classroom. There, you will compare your observations to the Landsat, Sentinel-2 and Planetscope satellite imagery of MKRF displayed in the interactive map above. In you groups:
+
+1)  Locate each site on the images of the study area and identify the pixel in the imagery corresponding to the site.
+2)  Describe the pixel in the datasheet (pixel characteristics column). What is its color? Does it have high or low reflectance? (If you’re color blind, don’t worry about wavelength. Just consider how much light is being reflected.)
+3)  Look at the NDVI images and estimate the value for the pixel at each site.
+
+#### Discussion Questions
+
+1)  Why do you think that the range of NDVI values differs so much between sensors?
+
+2)  Do you see much difference in NDIV values between sparsely and densely vegetated areas? Why do you think this is?
+
+# Unsupervised Classification
+
+Now that we have some understanding of the mixed pixel problem across various pixel resolutions, let's investigate how these principles impact our ability to classify remote sensing data into meaningful classes. As you will learn in GEM 520, there are two core classification approaches: supervised and unsupervised classification. In brief, supervised classification leverages a set of training data to classify pixels. For example, you may attribute some point data with land cover classes based on a field survey or photo interpretation, and then train a model which assigns forested VS non-forested classes based on NDVI values. Unsupervised classification instead classifies an image based on groups of pixels which share spectral properties, which are assigned labels afterwards. In the example below, we have performed an unsupervised classification on the MKRF Planetscope data (RGB & NIR bands). In your groups, compare the classification to the RGB imagery, and assign some meaningful names to each identified class in the provided table. Once you have completed this step, zoom in to the plots we visited yesterday, and answer the discussion questions.
+
+```{r unsupervised classification, echo=FALSE}
+
+
+unsup_class <- rast("D:/Sync/MGEM_Loon_Lake/unsup_class.tiff")
+
+```
+
+```{r leaflet2, echo=FALSE, include=FALSE}
+
+classified_pal <- colorFactor(c("#fd8d3c","#bd0026",
+                    "#78c679", "#006d2c",
+                    "#3690c0", "#00441b",
+                    "#662506"), values(unsup_class),na.color = "transparent")
+
+e <- leaflet(Plots, width = 600, height = 600) %>%
+  
+  addMapPane("right", zIndex = 0) %>%
+  addMapPane("left",  zIndex = 0) %>%
+  addTiles(group = "base", layerId = "baseid1", options = pathOptions(pane = "right")) %>%
+  addTiles(group = "base", layerId = "baseid2", options = pathOptions(pane = "left")) %>%
+  
+  ##add plots and enable labels
+  addMarkers(group = "Plots", label = ~htmlEscape(Name))%>%
+  
+
+  ##add Planet RGB and Unsupervised Classification
+  addRasterRGB(x = Planet, 3,2,1,
+               quantiles = c(0.02, 0.98), domain = NULL,
+               options = leafletOptions(pane = "left"), group = "RGB",
+               maxBytes = 11269792) %>%
+  addRasterImage(x = unsup_class, colors = classified_pal,
+                 options = leafletOptions(pane = "right"), group = "Planet",
+               maxBytes = 11269792) %>%
+  addLegend(pal = classified_pal ,values = values(unsup_class), group = "Planet", opacity = 1) %>%
+  
+  ##Set layer controls and enable side by side
+  addLayersControl(baseGroups = c("Planet"),
+                   overlayGroups = c("Plots")) %>%
+  addSidebyside(layerId = "sidecontrols",
+                rightId = "baseid1",
+                leftId  = "baseid2") %>%
+  
+  ##Add scale bar and enable GPS live location
+  addScaleBar(position = c("bottomleft")) %>%
+  addControlGPS(options = gpsOptions(position = "topleft", activate = TRUE,
+                                     autoCenter = TRUE, maxZoom = 10, setView = TRUE))
+
+
+
+
+```
+
+```{r map2, echo=FALSE}
+e
+```
+
+```{r table2, echo=FALSE}
+
+
+table2 <- read.csv("D:/Sync/MGEM_Loon_Lake/Classification_Table.csv")
+
+DT::datatable(table2,
+              rownames = FALSE,
+              class = 'cell-border stripe',
+              colnames = c("Class", "Name"),
+              extensions = 'Buttons',
+              options = list(dom = 'Bfrtip',buttons = c('pdf'), pageLength = 7),
+              editable = TRUE) %>%
+  formatStyle('Class',
+              target = 'row',
+              backgroundColor = styleEqual(c(1,2,3,4,5,6, 7), c("gray", "white", "gray", "white", "gray", "white", "gray")))
+
+```
+
+#### Discussion Questions
+
+1.  Did the class names you assigned correspond to the land cover notes you took at your plots?
+2.  Do you think the unsupervised classification accurately represents the key land cover types of MKRF? Why or why not?
+3.  Would you retroactively change any of the land cover notes you took in the field, now that you have seen the classified map?
