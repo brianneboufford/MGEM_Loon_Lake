@@ -2,7 +2,7 @@
 title: "MGEM Mixed Pixel Lab"
 author:
   - name: Ramon Melser
-    email: melser@student.ubc.ca
+    email: ramon.melser@ubc.ca
 format:
   html:
     code-links:
